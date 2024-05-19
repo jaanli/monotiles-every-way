@@ -1,0 +1,9 @@
+[package]
+name = "monotiles-every-way"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+svg = "0.9.0"
+pdf-canvas = "0.7.0"
+rand = "0.8.5"
