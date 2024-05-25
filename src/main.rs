@@ -7,7 +7,7 @@ fn main() {
     svg::save("monotile.svg", &svg).unwrap();
 
     let pdf = monotile.generate_pdf();
-    pdf.save("monotile.pdf").unwrap();
+    pdf.finish().unwrap();
 
     println!("Monotile generated successfully!");
 }

@@ -1,8 +1,8 @@
-use rand::Rng;
-use svg::node::element::Path;
+use pdf_canvas::{Canvas, Pdf};
+use std::io;
 use svg::node::element::path::Data;
+use svg::node::element::Path;
 use svg::Document;
-use pdf_canvas::Pdf;
 
 pub struct Monotile {
     width: u32,
@@ -22,15 +22,14 @@ impl Monotile {
     pub fn generate_svg(&self) -> Document {
         let mut data = Data::new();
 
-        let mut rng = rand::thread_rng();
-        let x = rng.gen_range(0..self.width);
-        let y = rng.gen_range(0..self.height);
-
-        data = data.move_to((x, y))
-                   .line_by((self.width - x, 0))
-                   .line_by((0, self.height - y))
-                   .line_by((x - self.width, 0))
-                   .close();
+        // Use the hat function to draw the pattern
+        self.hat_svg(
+            &mut data,
+            self.width as f64 / 2.0,
+            self.height as f64 / 2.0,
+            0.0,
+            false,
+        );
 
         let path = Path::new()
             .set("fill", self.color.clone())
@@ -45,21 +44,85 @@ impl Monotile {
     }
 
     pub fn generate_pdf(&self) -> Pdf {
-        let mut pdf = Pdf::create(self.width as f32, self.height as f32);
+        let mut pdf = Pdf::create("output.pdf").expect("Failed to create PDF");
 
-        let mut rng = rand::thread_rng();
-        let x = rng.gen_range(0..self.width);
-        let y = rng.gen_range(0..self.height);
-
-        pdf.fill_color(self.color.clone())
-           .begin_path()
-           .move_to(x as f32, y as f32)
-           .line_to((self.width - x) as f32, y as f32)
-           .line_to((self.width - x) as f32, (self.height - y) as f32)
-           .line_to(x as f32, (self.height - y) as f32)
-           .close_path()
-           .fill();
+        pdf.render_page(self.width as f32, self.height as f32, |canvas| {
+            // Use the hat function to draw the pattern
+            self.hat_pdf(
+                canvas,
+                self.width as f64 / 2.0,
+                self.height as f64 / 2.0,
+                0.0,
+                false,
+            )
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            Ok(())
+        })
+        .expect("Failed to render page");
 
         pdf
+    }
+
+    fn hat_svg(&self, data: &mut Data, _x: f64, _y: f64, _angle: f64, _flip: bool) {
+        let coords = [
+            (0., -1.73205081),
+            (-1., -1.73205081),
+            (-1.5, -2.59807),
+            (-3., -1.73205081),
+            (-3., 0.),
+            (-4., 0.),
+            (-4.5, 0.8660254),
+            (-3., 1.7320508),
+            (-1.5, 0.8660254),
+            (-1., 1.7320508),
+            (1., 1.7320508),
+            (1.5, 0.8660254),
+        ];
+
+        for &(dx, dy) in &coords {
+            *data = data.clone().line_by((dx, dy));
+        }
+        *data = data.clone().close();
+    }
+
+    fn hat_pdf(
+        &self,
+        canvas: &mut Canvas,
+        x: f64,
+        y: f64,
+        _angle: f64,
+        _flip: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        canvas.gsave()?;
+        canvas.concat(pdf_canvas::graphicsstate::Matrix::translate(
+            x as f32, y as f32,
+        ))?;
+        canvas.concat(pdf_canvas::graphicsstate::Matrix::scale(1.0, 1.0))?;
+        canvas.set_line_width(1.0)?;
+        canvas.move_to(0.0, 0.0)?;
+
+        let coords = [
+            (0.0, -1.73205081),
+            (-1.0, -1.73205081),
+            (-1.5, -2.59807),
+            (-3.0, -1.73205081),
+            (-3.0, 0.0),
+            (-4.0, 0.0),
+            (-4.5, 0.8660254),
+            (-3.0, 1.7320508),
+            (-1.5, 0.8660254),
+            (-1.0, 1.7320508),
+            (1.0, 1.7320508),
+            (1.5, 0.8660254),
+        ];
+
+        for &(dx, dy) in &coords {
+            canvas.line_to(dx as f32, dy as f32)?;
+        }
+        canvas.close_and_stroke()?;
+        canvas.fill()?;
+        canvas.stroke()?;
+        canvas.grestore()?;
+        Ok(())
     }
 }
