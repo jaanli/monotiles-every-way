@@ -11,6 +11,8 @@ class Point {
 }
 
 const IDENTITY = [1, 0, 0, 0, 1, 0];
+const N_ITERATIONS = 3;
+let num_tiles = 0;
 
 type ColorMapKey = "Gamma" | "Gamma1" | "Gamma2" | "Delta" | "Theta" | "Lambda" | "Xi" | "Pi" | "Sigma" | "Phi" | "Psi";
 
@@ -27,6 +29,7 @@ const COLOR_MAP: Record<ColorMapKey, string> = {
   "Phi": "rgb(0, 255, 0)",
   "Psi": "rgb(0, 255, 255)"
 };
+
 
 const SPECTRE_POINTS: Point[] = [
   new Point(0, 0),
@@ -103,6 +106,7 @@ class Tile {
   }
 
   draw(ctx: CanvasRenderingContext2D, tile_transformation: number[] = IDENTITY) {
+      num_tiles++;
       return drawPolygon(ctx, tile_transformation, COLOR_MAP[this.label], "black", 0.1);
   }
 }
@@ -143,20 +147,94 @@ function buildSpectreBase(): Record<ColorMapKey, Tile | MetaTile> {
   return spectre_base_cluster as Record<ColorMapKey, Tile | MetaTile>;
 }
 
+function buildSupertiles(tileSystem: Record<ColorMapKey, Tile | MetaTile>): Record<ColorMapKey, MetaTile> {
+  const quad = (tileSystem["Delta"] as Tile).quad;
+  const R = [-1, 0, 0, 0, 1, 0];
+
+  const transformation_rules: [number, number, number][] = [
+      [60, 3, 1], [0, 2, 0], [60, 3, 1], [60, 3, 1],
+      [0, 2, 0], [60, 3, 1], [-120, 3, 3]
+  ];
+
+  let transformations: number[][] = [IDENTITY];
+  let total_angle = 0;
+  let rotation = IDENTITY;
+  let transformed_quad = [...quad];
+
+  for (const [_angle, _from, _to] of transformation_rules) {
+      if (_angle !== 0) {
+          total_angle += _angle;
+          rotation = trot(total_angle * Math.PI / 180);
+          transformed_quad = quad.map(q => transPt(rotation, q));
+      }
+
+      const ttt = transTo(
+          transformed_quad[_to],
+          transPt(transformations[transformations.length - 1], quad[_from])
+      );
+      transformations.push(mul(ttt, rotation));
+  }
+
+  transformations = transformations.map(t => mul(R, t));
+
+  const super_rules: Partial<Record<ColorMapKey, (ColorMapKey | null)[]>> = {
+      "Gamma":  ["Pi",  "Delta", null,  "Theta", "Sigma", "Xi",  "Phi",    "Gamma"],
+      "Delta":  ["Xi",  "Delta", "Xi",  "Phi",   "Sigma", "Pi",  "Phi",    "Gamma"],
+      "Theta":  ["Psi", "Delta", "Pi",  "Phi",   "Sigma", "Pi",  "Phi",    "Gamma"],
+      "Lambda": ["Psi", "Delta", "Xi",  "Phi",   "Sigma", "Pi",  "Phi",    "Gamma"],
+      "Xi":     ["Psi", "Delta", "Pi",  "Phi",   "Sigma", "Psi", "Phi",    "Gamma"],
+      "Pi":     ["Psi", "Delta", "Xi",  "Phi",   "Sigma", "Psi", "Phi",    "Gamma"],
+      "Sigma":  ["Xi",  "Delta", "Xi",  "Phi",   "Sigma", "Pi",  "Lambda", "Gamma"],
+      "Phi":    ["Psi", "Delta", "Psi", "Phi",   "Sigma", "Pi",  "Phi",    "Gamma"],
+      "Psi":    ["Psi", "Delta", "Psi", "Phi",   "Sigma", "Psi", "Phi",    "Gamma"]
+  };
+
+  const super_quad = [
+      transPt(transformations[6], quad[2]),
+      transPt(transformations[5], quad[1]),
+      transPt(transformations[3], quad[2]),
+      transPt(transformations[0], quad[1])
+  ];
+
+  return Object.fromEntries(
+      Object.entries(super_rules).map(([label, substitutions]) => [
+          label,
+          new MetaTile(
+              (substitutions as (ColorMapKey | null)[])
+                  .map((sub, i) => sub ? [tileSystem[sub as ColorMapKey], transformations[i]] as [Tile | MetaTile, number[]] : null)
+                  .filter((item): item is [Tile | MetaTile, number[]] => item !== null),
+              super_quad
+          )
+      ])
+  ) as Record<ColorMapKey, MetaTile>;
+}
+
 function drawSpectreMonotile() {
   const canvas = document.createElement('canvas');
-  canvas.width = 800;
-  canvas.height = 800;
+  canvas.width = 1000;
+  canvas.height = 1000;
   document.body.appendChild(canvas);
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
   ctx.translate(400, 400);
-  ctx.scale(100, 100);
+  ctx.scale(50, 50);
 
-  const shapes = buildSpectreBase();
+  let shapes = buildSpectreBase();
+  const start = performance.now();
+  for (let i = 0; i < N_ITERATIONS; i++) {
+      shapes = buildSupertiles(shapes);
+  }
+  const time1 = performance.now() - start;
+  console.log(`Supertiling loop took ${time1.toFixed(4)} milliseconds`);
+
+  const drawStart = performance.now();
   shapes["Delta"].draw(ctx);
+  const time2 = performance.now() - drawStart;
+  console.log(`Tile recursion loop took ${time2.toFixed(4)} milliseconds, generated ${num_tiles} tiles`);
+
+  console.log(`Total processing time ${(time1 + time2).toFixed(4)} milliseconds, ${((time1 + time2) / num_tiles * 1000).toFixed(4)} μs/tile`);
 }
 
 drawSpectreMonotile();
